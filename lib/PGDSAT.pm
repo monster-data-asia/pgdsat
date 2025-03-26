@@ -449,18 +449,41 @@ sub check_1_1_2
 {
 	my $self = shift;
 
+	# Check for PGDG PostgreSQL packages
 	@{ $self->{pkg_ver} } = `rpm -qa 2>/dev/null| grep -E "postgresql[1-9\.]{1,2}-server" | grep -i PGDG | awk -F "-" '{print \$3}' | sort -u`;
 	if ($#{ $self->{pkg_ver} } < 0) {
 		@{ $self->{pkg_ver} } = `dpkg -l 2>/dev/null | grep -E "postgresql-[1-9]{1,2} .*pgdg" | awk '{print \$3}' | sed 's/-.*//' | sort -u`;
 	}
+	
+	# Check for Percona PostgreSQL packages
+	my $percona_pkg = `rpm -qa 2>/dev/null| grep -E "percona-postgresql[1-9\.]{1,2}-server" | wc -l`;
+	if (!$percona_pkg) {
+		$percona_pkg = `dpkg -l 2>/dev/null | grep -E "percona-postgresql-[1-9]{1,2}" | wc -l`;
+	}
+	chomp($percona_pkg);
+	
+	# Check for Citus Data PostgreSQL packages
+	my $citus_pkg = `rpm -qa 2>/dev/null| grep -E "citus-postgresql[1-9\.]{1,2}" | wc -l`;
+	if (!$citus_pkg) {
+		$citus_pkg = `dpkg -l 2>/dev/null | grep -E "postgresql-[1-9]{1,2}-citus" | wc -l`;
+	}
+	chomp($citus_pkg);
+	
 	chomp(@{ $self->{pkg_ver} });
-	if ($#{ $self->{pkg_ver} } < 0) {
-		$self->logmsg('1.2', 'WARNING', 'PostgreSQL packages are not from the PGDG repository.');
+	if ($#{ $self->{pkg_ver} } < 0 && $percona_pkg == 0 && $citus_pkg == 0) {
+		$self->logmsg('1.2', 'WARNING', 'PostgreSQL packages are not from trusted repositories (PGDG, Percona, or Citus Data).');
 		$self->{results}{'1.1.2'} = 'FAILURE';
 	}
 	else
 	{
-		$self->{cluster} = $self->{pkg_ver}[-1] if (!$self->{cluster});
+		if ($percona_pkg > 0) {
+			$self->logmsg('0.2', 'INFO', 'Using Percona PostgreSQL distribution.');
+		}
+		if ($citus_pkg > 0) {
+			$self->logmsg('0.3', 'INFO', 'Using Citus Data PostgreSQL distribution.');
+		}
+		
+		$self->{cluster} = $self->{pkg_ver}[-1] if (!$self->{cluster} && $#{ $self->{pkg_ver} } >= 0);
 		$self->logmsg('0.1', 'SUCCESS', 'Test passed');
 	}
 }
